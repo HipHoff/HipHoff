@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Average Weed Prices Per State</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js" charset="utf-8"></script>
+        <script src="https://s3-us-west-1.amazonaws.com/hiphoff.com/d3.tip.v0.6.3.js"></script>
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+        <link rel="stylesheet" href="//rawgithub.com/Caged/d3-tip/master/examples/example-styles.css">
+        <style type="text/css">
+
+        .states {
+          fill: none;
+          stroke: #fff;
+          stroke-linejoin: round;
+        }
+
+        #hovered {
+          stroke: #000;
+        }
+
+        #legend {
+            padding: 1.5em 0 0 1.5em;
+        }
+
+        li.key {
+            border-top-width: 15px;
+            border-top-style: solid;
+            font-size: .75em;
+            width: 7.8%;
+            padding-left: 0;
+            padding-right: 0;
+        }
+
+        </style>
+    </head>
+    <body>
+      <div id="legend">
+          <span id='header'><small>Average price of high-quality marijuana</small></span>
+      </div>
+        <script type="text/javascript">
+
+            d3.selection.prototype.moveToFront = function() {
+              return this.each(function(){
+              this.parentNode.appendChild(this);
+              });
+            };
+
+            var formats = {
+                dollar: d3.format('$,.2f')
+            };
+
+            var colors = ['#ffffe5','#f7fcb9','#d9f0a3','#addd8e','#78c679','#41ab5d','#238443','#006837','#004529'].reverse()
+
+            //Width and height
+            var w = 1500;
+            var h = 500;
+            var highdomain, meddomain, lowdomain;
+
+            //Define map projection
+            var projection = d3.geo.albersUsa()
+                                   .translate([w/2, h/2])
+                                   .scale([1000]);
+
+            //Define path generator
+            var path = d3.geo.path()
+                             .projection(projection);
+                             
+            //Define quantize scale to sort data values into buckets of color
+            var color = d3.scale.quantize().range(colors);
+                                
+            var tip = d3.tip()
+              .offset([-2,0])            
+              .attr('class', 'd3-tip')
+              .html(function(d) { return "The average price of high quality weed in " + d.properties.name + ' is $' + d.properties.highq + '.'; });
+
+            //Create SVG element
+            var svg = d3.select("body")
+                        .append("svg")
+                        .call(tip)
+                        .attr("width", w)
+                        .attr("height", h);
+
+            //Load in weed price data
+            d3.csv("https://s3-us-west-1.amazonaws.com/hiphoff.com/Average+Prices.csv" + '?' + Math.floor(Math.random() * 1000), function(data) {
+                //Set output range for color scale
+
+                highdomain = d3.extent(data,function(d) {return parseFloat(d.HighQ);});
+                meddomain = d3.extent(data,function(d) {return parseFloat(d.MedQ);});
+                lowdomain = d3.extent(data,function(d) {return parseFloat(d.LowQ);});
+                color.domain(highdomain)
+
+                //Load in GeoJSON data
+                d3.json("https://s3-us-west-1.amazonaws.com/hiphoff.com/us-states.json" + '?' + Math.floor(Math.random() * 1000), function(json) {
+
+                    //Merge the price data and GeoJSON
+                    //Loop through once for each data value
+                    for (var i = 0; i < data.length; i++) {
+                
+                        //Grab state name
+                        var dataState = data[i].State;
+                                        
+                        //Find the corresponding state inside the GeoJSON
+                        for (var j = 0; j < json.features.length; j++) {
+                        
+                            var jsonState = json.features[j].properties.name;
+                
+                            if (dataState === jsonState) {
+                        
+                                //Copy the data value into the JSON
+                                json.features[j].properties.highq = parseFloat(data[i].HighQ);
+                                json.features[j].properties.medq = parseFloat(data[i].MedQ);
+                                json.features[j].properties.lowq = parseFloat(data[i].LowQ);
+
+                                //Stop looking through the JSON
+                                break;
+                                
+                            }
+                        }       
+                    }
+
+                    //Bind data and create one path per GeoJSON feature
+                    svg.selectAll("path")
+                       .data(json.features)
+                       .enter()
+                       .append("path")
+                       .attr("d", path)
+                       .attr("class", "states")
+                       .attr('highq', function(d) {return d.properties.highq})
+                       .attr('medq', function(d) {return d.properties.medq})
+                       .attr('lowq', function(d) {return d.properties.lowq})
+                       .style("fill", function(d) {
+                            //Get data value
+                            var value = d.properties.highq;
+                            
+                            if (value) {
+                                //If value exists…
+                                return color(value);
+                            } else {
+                                //If value is undefined…
+                                return "#FF0000";
+                            }
+                       })
+                       .on('mouseover', function (d) {
+                        tip.show(d);
+                        d3.select(this).moveToFront();
+                        d3.select(this).attr('id','hovered');
+                    })
+                      .on('mouseout', function (d) {
+                       tip.hide(d);
+                       d3.select(this).attr('id','');
+                   })
+
+                });
+          
+            d3.select('#highqual').on('click', function(d) {
+              update('high')
+            });
+
+            d3.select('#medqual').on('click', function(d) {
+              update('med')
+            });
+
+            d3.select('#lowqual').on('click', function(d) {
+              update('low')
+            })      
+           
+            var legend = d3.select('#legend')
+                .append('ul')
+                .attr('class', 'list-inline')
+                .selectAll('li.key')
+                .data(colors)
+                .enter().append('li')
+                .attr('class', 'key')
+                .style('border-top-color', String)
+                .text(function(d) {
+                    return formats.dollar(color.invertExtent(d)[0]);
+                });
+            });
+        
+    function update(quality) {
+            if (quality=='high') {
+                 color.domain(highdomain);
+
+                  svg.selectAll("path")
+                  .transition()
+                  .duration(3000)
+                  .style('fill', function() {return color(d3.select(this).attr('highq'));});
+
+                  tip.html(function(d) {return "The average price of high quality weed in " + d.properties.name + ' is $' + d.properties.highq + '.'; });
+
+                  svg.call(tip);
+
+                 d3.selectAll('#legend li')
+                   .data(colors)
+                   .text(function(d) {
+                       return formats.dollar(color.invertExtent(d)[0]);
+                         });
+
+                d3.select('#header').html('<small>Average price of high-quality marijuana</small>')  
+
+         }
+
+
+         if (quality=='med') {
+              color.domain(meddomain);
+
+               svg.selectAll("path")
+               .transition()
+               .duration(3000)
+               .style('fill', function() {return color(d3.select(this).attr('medq'));});
+
+               tip.html(function(d) {return "The average price of medium quality weed in " + d.properties.name + ' is $' + d.properties.medq + '.'; });
+
+               svg.call(tip);
+
+              d3.selectAll('#legend li')
+                .data(colors)
+                .text(function(d) {
+                    return formats.dollar(color.invertExtent(d)[0]);
+                      });
+              
+              d3.select('#header').html('<small>Average price of medium-quality marijuana</small>')  
+      }
+
+        if (quality=='low') {
+
+              color.domain(lowdomain);
+
+               svg.selectAll("path")
+               .transition()
+               .duration(3000)
+               .style('fill', function() {return color(d3.select(this).attr('lowq'));});
+
+               tip.html(function(d) {return "The average price of low quality weed in " + d.properties.name + ' is $' + d.properties.lowq + '.'; });
+
+               svg.call(tip);
+
+              d3.selectAll('#legend li')
+                .data(colors)
+                .text(function(d) {
+                    return formats.dollar(color.invertExtent(d)[0]);
+                      });
+
+              d3.select('#header').html('<small>Average price of low-quality marijuana</small>')  
+  
+        }
+    }            
+        </script>
+<button type='button' id='highqual'>Switch to high quality data</button>
+<button type='button' id='medqual'>Switch to medium quality data</button>
+<button type='button' id='lowqual'>Switch to low quality data</button>        
+</body>
+</html>
